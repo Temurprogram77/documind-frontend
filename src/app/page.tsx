@@ -3,19 +3,36 @@
 import React, { useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { ChatInterface } from "@/components/ChatInterface";
-import { Brain, Cpu, ShieldCheck } from "lucide-react";
+import { AuthModal } from "@/components/AuthModal";
+import {
+  Brain,
+  ShieldCheck,
+  Database,
+  User as UserIcon,
+  LogOut,
+  LogIn,
+} from "lucide-react";
+import { useDocuMindStats } from "@/hooks";
+import { DocumentInfo } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Home() {
-  const [isDocumentUploaded, setIsDocumentUploaded] = useState<boolean>(false);
-  const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
-  const [chunksCount, setChunksCount] = useState<number>(0);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [activeDocument, setActiveDocument] = useState<DocumentInfo | null>(null);
+  const { user, isAuthenticated, openAuthModal, logout } = useAuth();
 
-  const handleUploadSuccess = (filename: string, chunks: number) => {
-    setIsDocumentUploaded(true);
-    setUploadedFilename(filename);
-    setChunksCount(chunks);
+  // TanStack Query polling vector statistics
+  const { data: statsData } = useDocuMindStats();
+
+  const handleUploadSuccess = (info: DocumentInfo) => {
+    setActiveDocument(info);
   };
+
+  const handleResetDocument = () => {
+    setActiveDocument(null);
+  };
+
+  const totalChunks =
+    statsData?.total_chunks ?? statsData?.indexed_chunks ?? activeDocument?.chunksCount ?? 0;
 
   return (
     <main className="flex flex-col h-screen overflow-hidden bg-slate-950 text-slate-100">
@@ -33,30 +50,66 @@ export default function Home() {
                 DocuMind <span className="text-teal-400 font-extrabold">AI</span>
               </h1>
               <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/30">
-                Enterprise MVP
+                Enterprise RAG
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Autonomous Document Intelligence & RAG System
+            <p className="text-xs text-slate-400 hidden sm:block">
+              Autonomous Document Intelligence & Isolated Vector Knowledge Base
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-xs">
-          <div className="hidden sm:flex items-center gap-2 text-slate-400 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
-            <Cpu className="w-3.5 h-3.5 text-teal-400" />
-            <span>ChromaDB Vector Store</span>
+        <div className="flex items-center gap-3 text-xs">
+          {/* Live Vector Stats badge powered by TanStack Query */}
+          <div className="hidden md:flex items-center gap-2 text-slate-400 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
+            <Database className="w-3.5 h-3.5 text-teal-400" />
+            <span>
+              Vectors: <strong className="text-teal-300 font-mono">{totalChunks}</strong> chunks
+            </span>
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 text-slate-400 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
+          <div className="hidden lg:flex items-center gap-2 text-slate-400 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Zero-Hallucination Grounding</span>
+            <span>Strict Document Grounding</span>
           </div>
 
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-slate-300 font-medium text-xs">System Ready</span>
-          </div>
+          {/* Authentication Status / Profile */}
+          {isAuthenticated && user ? (
+            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-800">
+              <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-2.5 py-1.5 rounded-lg">
+                <div className="w-6 h-6 rounded-full bg-teal-500/20 border border-teal-500/30 flex items-center justify-center text-teal-400 font-bold text-xs uppercase">
+                  {user.username.slice(0, 2)}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <p className="font-semibold text-slate-200 text-xs leading-none">
+                    {user.username}
+                  </p>
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    {user.email || "Active User"}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={logout}
+                title="Sign Out"
+                className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800/80 rounded-lg transition-colors"
+                aria-label="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="pl-3 border-l border-slate-800">
+              <button
+                onClick={openAuthModal}
+                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors shadow-sm"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -66,20 +119,22 @@ export default function Home() {
         <section className="lg:col-span-5 xl:col-span-4 border-r border-slate-800 bg-slate-950/80 overflow-y-auto">
           <FileUpload
             onUploadSuccess={handleUploadSuccess}
-            isProcessing={isProcessing}
-            setIsProcessing={setIsProcessing}
+            onReset={handleResetDocument}
+            activeDocumentId={activeDocument?.documentId}
           />
         </section>
 
         {/* Right Column: Interactive Chat & SSE Streaming (8 cols on lg) */}
         <section className="lg:col-span-7 xl:col-span-8 flex flex-col h-full overflow-hidden bg-slate-950">
           <ChatInterface
-            isDocumentUploaded={isDocumentUploaded}
-            uploadedFilename={uploadedFilename}
-            chunksCount={chunksCount}
+            isDocumentUploaded={Boolean(activeDocument)}
+            documentInfo={activeDocument}
           />
         </section>
       </div>
+
+      {/* Global Authentication Modal */}
+      <AuthModal />
     </main>
   );
 }
