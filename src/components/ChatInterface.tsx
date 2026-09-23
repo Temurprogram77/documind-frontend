@@ -1,38 +1,46 @@
 "use client";
 
 import React, { useState, useRef, useEffect, FormEvent } from "react";
-import { Send, Bot, User, Sparkles, AlertCircle, ShieldAlert } from "lucide-react";
-
-export interface ChatMessage {
-  id: string;
-  sender: "user" | "ai";
-  content: string;
-  timestamp: string;
-  isStreaming?: boolean;
-}
+import {
+  Send,
+  Bot,
+  User,
+  Sparkles,
+  AlertCircle,
+  ShieldAlert,
+  StopCircle,
+  Trash2,
+  Lock,
+  ArrowRight,
+} from "lucide-react";
+import { useChatStream } from "@/hooks";
+import { DocumentInfo } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ChatInterfaceProps {
   isDocumentUploaded: boolean;
-  uploadedFilename: string | null;
-  chunksCount: number;
+  documentInfo: DocumentInfo | null;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   isDocumentUploaded,
-  uploadedFilename,
-  chunksCount,
+  documentInfo,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { isAuthenticated, openAuthModal } = useAuth();
   const [inputQuery, setInputQuery] = useState<string>("");
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const {
+    messages,
+    isStreaming,
+    errorMessage,
+    sendMessage,
+    abortStream,
+    clearMessages,
+  } = useChatStream();
 
-  // Auto-scroll to bottom of conversation
+  // Scroll to bottom whenever messages update
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -41,137 +49,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     scrollToBottom();
   }, [messages]);
 
-  // Focus input when document becomes available
+  // Focus input when document is ready
   useEffect(() => {
-    if (isDocumentUploaded) {
+    if (isAuthenticated && isDocumentUploaded) {
       inputRef.current?.focus();
     }
-  }, [isDocumentUploaded]);
+  }, [isAuthenticated, isDocumentUploaded]);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const query = inputQuery.trim();
-    if (!query || isStreaming || !isDocumentUploaded) return;
-
-    setErrorMessage(null);
-    setInputQuery("");
-
-    const userMessageId = `user-${Date.now()}`;
-    const aiMessageId = `ai-${Date.now()}`;
-    const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    const newUserMessage: ChatMessage = {
-      id: userMessageId,
-      sender: "user",
-      content: query,
-      timestamp,
-    };
-
-    const newAiPlaceholderMessage: ChatMessage = {
-      id: aiMessageId,
-      sender: "ai",
-      content: "",
-      timestamp,
-      isStreaming: true,
-    };
-
-    setMessages((prev) => [...prev, newUserMessage, newAiPlaceholderMessage]);
-    setIsStreaming(true);
-
-    try {
-      const response = await fetch(`${API_URL}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
-        body: JSON.stringify({ query, top_k: 4 }),
-      });
-
-      if (!response.ok) {
-        const errorJson = await response.json().catch(() => ({}));
-        throw new Error(errorJson.detail || `Server returned error ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error("No readable stream received from backend.");
-      }
-
-      // Read Server-Sent Events stream using ReadableStream reader
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let partialBuffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        partialBuffer += decoder.decode(value, { stream: true });
-
-        // Split by Server-Sent Event boundary (\n\n)
-        const events = partialBuffer.split("\n\n");
-        partialBuffer = events.pop() || ""; // Retain incomplete remainder
-
-        for (const event of events) {
-          const lines = event.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const dataPayload = line.slice(6).trim();
-
-              if (dataPayload === "[DONE]") {
-                continue;
-              }
-
-              try {
-                const parsed = JSON.parse(dataPayload);
-                if (parsed.token) {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === aiMessageId
-                        ? { ...msg, content: msg.content + parsed.token }
-                        : msg
-                    )
-                  );
-                } else if (parsed.error) {
-                  setErrorMessage(parsed.error);
-                }
-              } catch {
-                // If payload is plain text rather than JSON
-                if (dataPayload && dataPayload !== "[DONE]") {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === aiMessageId
-                        ? { ...msg, content: msg.content + dataPayload }
-                        : msg
-                    )
-                  );
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || "Failed to communicate with Document AI service.");
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === aiMessageId
-            ? {
-                ...msg,
-                content:
-                  msg.content ||
-                  "⚠️ An error occurred while retrieving answer from the document context.",
-                isStreaming: false,
-              }
-            : msg
-        )
-      );
-    } finally {
-      setIsStreaming(false);
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === aiMessageId ? { ...msg, isStreaming: false } : msg))
-      );
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
     }
+
+    if (!inputQuery.trim() || isStreaming || !isDocumentUploaded || !documentInfo?.documentId) {
+      return;
+    }
+
+    const query = inputQuery.trim();
+    setInputQuery("");
+    sendMessage(query, {
+      documentId: documentInfo.documentId,
+      topK: 4,
+    });
   };
 
   return (
@@ -184,42 +85,77 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
-              Document Assistant
+              Document Intelligence Assistant
               <Sparkles className="w-3.5 h-3.5 text-teal-400" />
             </h3>
             <p className="text-xs text-slate-400">
-              {isDocumentUploaded && uploadedFilename ? (
+              {!isAuthenticated ? (
+                "Multi-Tenant RAG • Authentication required"
+              ) : isDocumentUploaded && documentInfo ? (
                 <span>
-                  Querying <strong className="text-slate-200">{uploadedFilename}</strong> (
-                  {chunksCount} chunks)
+                  Querying <strong className="text-slate-200">{documentInfo.filename}</strong> (
+                  {documentInfo.chunksCount > 0
+                    ? `${documentInfo.chunksCount} chunks indexed`
+                    : `Doc ID: ${documentInfo.documentId}`}
+                  )
                 </span>
               ) : (
-                "Upload a document on the left to start asking questions"
+                "Select or upload a PDF to query isolated vectors in ChromaDB"
               )}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {messages.length > 0 && !isStreaming && (
+            <button
+              onClick={clearMessages}
+              title="Clear conversation"
+              className="text-xs text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-800/80 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           <span className="text-[11px] px-2.5 py-1 rounded-full font-medium bg-slate-800 border border-slate-700 text-slate-400 flex items-center gap-1.5">
             <ShieldAlert className="w-3 h-3 text-teal-400" />
-            Zero Hallucination Mode
+            Grounded Context
           </span>
         </div>
       </div>
 
       {/* Messages Container */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {!isDocumentUploaded && messages.length === 0 ? (
+        {!isAuthenticated ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400 space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-teal-400 shadow-lg">
+              <Lock className="w-8 h-8" />
+            </div>
+            <div className="space-y-1.5 max-w-sm">
+              <h4 className="text-base font-semibold text-white">Sign In Required</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                DocuMind enforces strict multi-tenant ChromaDB isolation. Please log in or register
+                to upload and query your private enterprise documents.
+              </p>
+            </div>
+            <button
+              onClick={openAuthModal}
+              className="bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2"
+            >
+              <span>Sign In / Register</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        ) : !isDocumentUploaded && messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-500 space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600">
               <Bot className="w-8 h-8" />
             </div>
             <div className="space-y-1 max-w-sm">
-              <h4 className="text-sm font-medium text-slate-300">Document AI Offline</h4>
+              <h4 className="text-sm font-medium text-slate-300">Document AI Standby</h4>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Please upload a PDF document on the left panel to initialize the vector database
-                and enable real-time semantic chat.
+                Please upload a PDF document or select one from &ldquo;Your Documents&rdquo; on the left panel
+                to begin real-time semantic chat.
               </p>
             </div>
           </div>
@@ -230,11 +166,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
             <div className="space-y-1 max-w-sm">
               <h4 className="text-sm font-semibold text-slate-200">
-                Document Indexed Successfully
+                Ready for Document Inquiries
               </h4>
               <p className="text-xs text-slate-400 leading-relaxed">
-                You can now ask specific questions about figures, policies, dates, or summaries
-                contained within the uploaded document.
+                You can now ask questions about figures, policies, dates, or summaries contained
+                within <strong className="text-teal-300">{documentInfo?.filename}</strong>.
               </p>
             </div>
           </div>
@@ -302,29 +238,46 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             type="text"
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
-            disabled={!isDocumentUploaded || isStreaming}
+            disabled={!isAuthenticated || !isDocumentUploaded || isStreaming}
             placeholder={
-              !isDocumentUploaded
-                ? "Upload a document to unlock chat..."
+              !isAuthenticated
+                ? "Sign in to unlock Document AI chat..."
+                : !isDocumentUploaded
+                ? "Upload or select a document to unlock chat..."
                 : isStreaming
-                ? "DocuMind AI is analyzing document context..."
+                ? "Analyzing document context via SSE stream..."
                 : "Ask a question based on your document..."
             }
             className="flex-1 bg-slate-950 border border-slate-800 focus:border-teal-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
-          <button
-            type="submit"
-            disabled={!isDocumentUploaded || isStreaming || !inputQuery.trim()}
-            className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-800 text-white disabled:text-slate-500 p-3 rounded-xl transition-all disabled:cursor-not-allowed shadow-sm flex items-center justify-center flex-shrink-0"
-            aria-label="Send query"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={abortStream}
+              className="bg-red-600 hover:bg-red-500 text-white p-3 rounded-xl transition-all shadow-sm flex items-center justify-center flex-shrink-0"
+              aria-label="Stop generation"
+              title="Stop generation"
+            >
+              <StopCircle className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!isAuthenticated || !isDocumentUploaded || !inputQuery.trim()}
+              className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-800 text-white disabled:text-slate-500 p-3 rounded-xl transition-all disabled:cursor-not-allowed shadow-sm flex items-center justify-center flex-shrink-0"
+              aria-label="Send query"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
         </form>
         <p className="text-[11px] text-slate-500 text-center mt-2.5">
-          DocuMind AI retrieves relevant text segments and strictly adheres to document truth.
+          Django DRF Backend • Real-time Server-Sent Events (SSE) Streaming
         </p>
       </div>
     </div>
   );
 };
+
+export default ChatInterface;
