@@ -24,7 +24,7 @@ export const chatService = {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Accept": "text/event-stream",
+      "Accept": "text/event-stream, application/json, */*",
       "Authorization": `Bearer ${token}`,
     };
 
