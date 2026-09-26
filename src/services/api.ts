@@ -2,7 +2,7 @@ import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestCo
 import { ApiError } from "@/types";
 import { authStorage } from "./authService";
 
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+export const API_BASE_URL = (process.env.NEXT_API_KEY || "http://localhost:8000").replace(/\/+$/, "");
 
 /**
  * Global Enterprise Axios Client configured for Django DRF & SimpleJWT

@@ -17,8 +17,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Pass public environment variables during build time
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_API_KEY=http://localhost:8000
+ENV NEXT_API_KEY=${NEXT_API_KEY}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
