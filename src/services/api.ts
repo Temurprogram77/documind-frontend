@@ -2,7 +2,17 @@ import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestCo
 import { ApiError } from "@/types";
 import { authStorage } from "./authService";
 
-export const API_BASE_URL = (process.env.NEXT_API_KEY || "http://localhost:8000").replace(/\/+$/, "");
+const DEFAULT_API_URL =
+  process.env.NODE_ENV === "production"
+    ? "https://documind-ai-gqxr.onrender.com"
+    : "http://localhost:8000";
+
+export const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_API_KEY ||
+  DEFAULT_API_URL
+).replace(/\/+$/, "");
 
 /**
  * Global Enterprise Axios Client configured for Django DRF & SimpleJWT
