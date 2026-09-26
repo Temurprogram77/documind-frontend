@@ -56,6 +56,14 @@ export const documentService = {
     const response = await apiClient.delete<ResetResponse>("/api/admin/reset/", { headers });
     return response.data;
   },
+
+  /**
+   * Deletes a document and its vector chunks: DELETE /api/documents/<id>/
+   */
+  async deleteDocument(id: number): Promise<{ status: string; message: string }> {
+    const response = await apiClient.delete<{ status: string; message: string }>(`/api/documents/${id}/`);
+    return response.data;
+  },
 };
 
 export default documentService;
